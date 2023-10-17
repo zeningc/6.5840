@@ -12,7 +12,6 @@ import "net/rpc"
 import "net/http"
 
 type Coordinator struct {
-	// Your definitions here.
 	nReduce int
 	phase   string
 	mutex   sync.Mutex
@@ -86,6 +85,9 @@ func (c *Coordinator) MarkAsDone(args *MarkAsDoneArgs, reply *MarkAsDoneReply) e
 	c.mutex.Lock()
 	task := args.FilePath
 	taskType := args.TaskType
+	if taskType != c.phase {
+		return nil
+	}
 	var taskMap *map[string]string
 	if taskType == "map" {
 		taskMap = &c.rawTasks
@@ -95,7 +97,7 @@ func (c *Coordinator) MarkAsDone(args *MarkAsDoneArgs, reply *MarkAsDoneReply) e
 		return fmt.Errorf("task of unknown type marked as done\n")
 	}
 	(*taskMap)[task] = "done"
-	fmt.Printf("Coordinator: %v task %v is now marked as done\n", taskType, c.taskIds[task])
+	log.Printf("Coordinator: %v task %v is now marked as done\n", taskType, c.taskIds[task])
 	done := true
 	for _, v := range *taskMap {
 		if v != "done" {
@@ -105,7 +107,7 @@ func (c *Coordinator) MarkAsDone(args *MarkAsDoneArgs, reply *MarkAsDoneReply) e
 	}
 	if done {
 		if c.phase == "map" {
-			fmt.Printf(
+			log.Printf(
 				"Coordinator: all map tasks have finished, preparing reduce tasks\n", taskType, c.taskIds[task])
 			c.phase = "reduce"
 			cnt := len(c.taskIds)
@@ -115,6 +117,8 @@ func (c *Coordinator) MarkAsDone(args *MarkAsDoneArgs, reply *MarkAsDoneReply) e
 				cnt++
 			}
 		} else {
+			log.Printf("Coordinator: all reduce tasks have finished, exit the program."+
+				"map task map: %v\n reduce task map: %v\n", c.rawTasks, c.reduceTask)
 			c.phase = "done"
 		}
 	}
@@ -147,7 +151,7 @@ func (c *Coordinator) monitorTask(task string, taskType string) {
 		return
 	}
 	for !done {
-		time.Sleep(1000 * 10)
+		time.Sleep(10 * time.Second)
 		c.mutex.Lock()
 		done = (*taskMap)[task] == "done"
 		if !done {
@@ -170,11 +174,9 @@ func (c *Coordinator) Done() bool {
 // ReduceCnt is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
-
-	// Your code here.
 	c.nReduce = nReduce
 	c.server()
-	fmt.Printf("Coordinator: Launched, receive ReduceCnt: %v\n", nReduce)
+	log.Printf("Coordinator: Launched, receive ReduceCnt: %v\n", nReduce)
 	c.mutex.Lock()
 	c.phase = "map"
 	c.workerCnt = 0

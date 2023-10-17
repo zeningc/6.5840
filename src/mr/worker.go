@@ -69,8 +69,10 @@ func Worker(mapf func(string, string) []KeyValue,
 			log.Printf("Worker %v: received file path list for %v task %v, file list: %v\n",
 				workerId, taskType, taskId, taskFilePathList)
 			keyValueList := extractKeyValuePairs(taskFilePathList)
+			//log.Printf("Worker %v: extracted key value pairs: %v",
+			//	workerId, keyValueList)
 			runReduceTaskAndSaveResult(keyValueList, taskId, reducef)
-			log.Printf("Worker %v: ran reduce task and output result to files.\n", workerId)
+			log.Printf("Worker %v: ran reduce task %v and output result to files.\n", workerId, taskId)
 		} else {
 			log.Printf("worker %v: received null reply for AskForType", workerId)
 			getPhaseReply := GetPhaseReply{}
@@ -116,6 +118,7 @@ func closeAllTempFiles(reduceToFileMap map[int]*os.File) {
 
 func extractKeyValuePairs(taskFilePathList []string) []KeyValue {
 	keyValueList := []KeyValue{}
+	log.Printf("%v", taskFilePathList)
 	for _, fileName := range taskFilePathList {
 		file, err := os.Open(fileName)
 		if err != nil {
@@ -173,12 +176,14 @@ func runMapTask(taskPath string, f func(string, string) []KeyValue) []KeyValue {
 }
 
 func runReduceTaskAndSaveResult(keyValuePairs []KeyValue, taskId int, f func(string, []string) string) {
+	sort.Sort(ByKey(keyValuePairs))
 	i := 0
-	saveFileTempName := fmt.Sprintf("mr-out-%v*", taskId)
-	saveFile, err := os.CreateTemp("", saveFileTempName)
+	saveFileTempNamePattern := fmt.Sprintf("mr-out-%v*", taskId)
+	saveFile, err := os.CreateTemp("", saveFileTempNamePattern)
+	tempFileName := saveFile.Name()
 	for i < len(keyValuePairs) {
 		j := i + 1
-		for keyValuePairs[j].Key == keyValuePairs[i].Key {
+		for j < len(keyValuePairs) && keyValuePairs[j].Key == keyValuePairs[i].Key {
 			j++
 		}
 		values := []string{}
@@ -191,9 +196,10 @@ func runReduceTaskAndSaveResult(keyValuePairs []KeyValue, taskId int, f func(str
 			log.Fatal(err)
 		}
 		fmt.Fprintf(saveFile, "%v %v\n", keyValuePairs[i].Key, output)
+		i = j
 	}
 	saveFileName := fmt.Sprintf("mr-out-%v", taskId)
-	err = os.Rename(saveFileTempName, saveFileName)
+	err = os.Rename(tempFileName, saveFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
